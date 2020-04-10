@@ -69,17 +69,13 @@ type Bootstrapper struct {
 
 // NewBootstrapper creates a new kubeadm.Bootstrapper
 // TODO(#6891): Remove node as an argument
-func NewBootstrapper(api libmachine.API, cc config.ClusterConfig, n config.Node) (*Bootstrapper, error) {
+func NewBootstrapper(api libmachine.API, cc config.ClusterConfig, n config.Node, r command.Runner) (*Bootstrapper, error) {
 	name := driver.MachineName(cc, n)
 	h, err := api.Load(name)
 	if err != nil {
 		return nil, errors.Wrap(err, "getting api client")
 	}
-	runner, err := machine.CommandRunner(h)
-	if err != nil {
-		return nil, errors.Wrap(err, "command runner")
-	}
-	return &Bootstrapper{c: runner, contextName: cc.Name, k8sClient: nil}, nil
+	return &Bootstrapper{c: r, contextName: cc.Name, k8sClient: nil}, nil
 }
 
 // GetAPIServerStatus returns the api-server status

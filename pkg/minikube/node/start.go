@@ -89,18 +89,6 @@ func Start(starter Starter, apiServer bool) (*kubeconfig.Settings, error) {
 	cr := configureRuntimes(starter.Runner, *starter.Cfg, sv)
 	showVersionInfo(starter.Node.KubernetesVersion, cr)
 
-	// ssh should be set up by now
-	// switch to using ssh runner since it is faster
-	if driver.IsKIC(starter.Cfg.Driver) {
-		sshRunner, err := machine.SSHRunner(starter.Host)
-		if err != nil {
-			glog.Infof("error getting ssh runner: %v", err)
-		} else {
-			glog.Infof("Using ssh runner for kic...")
-			starter.Runner = sshRunner
-		}
-	}
-
 	var bs bootstrapper.Bootstrapper
 	var kcs *kubeconfig.Settings
 	if apiServer {
@@ -124,7 +112,7 @@ func Start(starter Starter, apiServer bool) (*kubeconfig.Settings, error) {
 			return nil, errors.Wrap(err, "Failed to update kubeconfig file.")
 		}
 	} else {
-		bs, err = cluster.Bootstrapper(starter.MachineAPI, viper.GetString(cmdcfg.Bootstrapper), *starter.Cfg, *starter.Node)
+		bs, err = cluster.Bootstrapper(starter.MachineAPI, viper.GetString(cmdcfg.Bootstrapper), *starter.Cfg, *starter.Node, starter.Runner)
 		if err != nil {
 			return nil, errors.Wrap(err, "Failed to get bootstrapper")
 		}
@@ -172,7 +160,7 @@ func Start(starter Starter, apiServer bool) (*kubeconfig.Settings, error) {
 		if err != nil {
 			return nil, errors.Wrap(err, "Getting primary control plane")
 		}
-		cpBs, err := cluster.Bootstrapper(starter.MachineAPI, viper.GetString(cmdcfg.Bootstrapper), *starter.Cfg, cp)
+		cpBs, err := cluster.Bootstrapper(starter.MachineAPI, viper.GetString(cmdcfg.Bootstrapper), *starter.Cfg, cp, starter.Runner)
 		if err != nil {
 			return nil, errors.Wrap(err, "Getting bootstrapper")
 		}
@@ -269,7 +257,7 @@ func configureRuntimes(runner cruntime.CommandRunner, cc config.ClusterConfig, k
 
 // setupKubeAdm adds any requested files into the VM before Kubernetes is started
 func setupKubeAdm(mAPI libmachine.API, cfg config.ClusterConfig, n config.Node) bootstrapper.Bootstrapper {
-	bs, err := cluster.Bootstrapper(mAPI, viper.GetString(cmdcfg.Bootstrapper), cfg, n)
+	bs, err := cluster.Bootstrapper(mAPI, viper.GetString(cmdcfg.Bootstrapper), cfg, n, starter.Runner)
 	if err != nil {
 		exit.WithError("Failed to get bootstrapper", err)
 	}

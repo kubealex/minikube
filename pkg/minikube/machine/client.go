@@ -36,12 +36,13 @@ import (
 	"github.com/docker/machine/libmachine/host"
 	"github.com/docker/machine/libmachine/mcnutils"
 	"github.com/docker/machine/libmachine/persist"
-	"github.com/docker/machine/libmachine/ssh"
+	lmssh "github.com/docker/machine/libmachine/ssh"
 	"github.com/docker/machine/libmachine/state"
 	"github.com/docker/machine/libmachine/swarm"
 	"github.com/docker/machine/libmachine/version"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
+	"golang.org/x/crypto/ssh"
 	"k8s.io/minikube/pkg/minikube/command"
 	"k8s.io/minikube/pkg/minikube/driver"
 	"k8s.io/minikube/pkg/minikube/exit"
@@ -49,12 +50,13 @@ import (
 	"k8s.io/minikube/pkg/minikube/out"
 	"k8s.io/minikube/pkg/minikube/registry"
 	"k8s.io/minikube/pkg/minikube/sshutil"
+	"k8s.io/minikube/pkg/util/retry"
 )
 
 // NewRPCClient gets a new client.
 func NewRPCClient(storePath, certsDir string) libmachine.API {
 	c := libmachine.NewClient(storePath, certsDir)
-	c.SSHClientType = ssh.Native
+	c.SSHClientType = lmssh.Native
 	return c
 }
 
@@ -154,19 +156,34 @@ func CommandRunner(h *host.Host) (command.Runner, error) {
 		return command.NewExecRunner(), nil
 	}
 
-	if driver.IsKIC(h.Driver.DriverName()) {
+	cr, err := SSHRunner(h)
+
+	// We have a slower backup runner, so we may as well use it.
+	if err != nil && driver.IsKIC(h.Driver.DriverName()) {
+		glog.Errorf("SSH runner failed, using KIC runner as backup: %v", err)
 		return command.NewKICRunner(h.Name, h.Driver.DriverName()), nil
 	}
-	return SSHRunner(h)
+
+	return cr, err
 }
 
 // SSHRunner returns an SSH runner for the host
 func SSHRunner(h *host.Host) (command.Runner, error) {
-	client, err := sshutil.NewSSHClient(h.Driver)
-	if err != nil {
-		return nil, errors.Wrap(err, "getting ssh client for bootstrapper")
+	// Retry in order to survive an ssh restart, which sometimes happens due to provisioning
+	var sc *ssh.Client
+	getSSH := func() (err error) {
+		sc, err = sshutil.NewSSHClient(h.Driver)
+		if err != nil {
+			glog.Warningf("ssh client failure (will retry): %v", err)
+		}
+		return err
 	}
-	return command.NewSSHRunner(client), nil
+
+	if err := retry.Expo(getSSH, 250*time.Millisecond, 2*time.Second); err != nil {
+		return nil, err
+	}
+
+	return command.NewSSHRunner(sc), nil
 }
 
 // Create creates the host
