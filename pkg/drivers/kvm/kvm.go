@@ -279,7 +279,7 @@ func (d *Driver) Start() (err error) {
 		}
 		if ip == "" {
 			log.Debugf("Waiting for machine to come up %d/%d", i, 40)
-			time.Sleep(3 * time.Second)
+			time.Sleep(10 * time.Second)
 			continue
 		}
 
